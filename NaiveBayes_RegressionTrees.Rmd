@@ -1,0 +1,245 @@
+---
+title: "The Naive Bayes Classifier and Regression Trees"
+author: "Joshi Villagomez"
+date: "2/21/2020"
+output: word_document/Rmd
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Flight Delays ####
+
+#### Table 8.4
+
+```{r}
+library(e1071)
+library(readr)
+delays.df <- read.csv("~/Desktop/FlightDelays.csv")
+```
+
+```{r}
+# change numerical variables to categorical first
+delays.df$DAY_WEEK <- factor(delays.df$DAY_WEEK)
+delays.df$DEP_TIME <- factor(delays.df$DEP_TIME)
+```
+
+```{r}
+# create hourly bins departure time 
+delays.df$CRS_DEP_TIME <- factor(round(delays.df$CRS_DEP_TIME/100))
+# Create training and validation sets.
+selected.var <- c(10, 1, 8, 4, 2, 13)
+train.index <- sample(c(1:dim(delays.df)[1]), dim(delays.df)[1]*0.6)  
+train.df <- delays.df[train.index, selected.var]
+valid.df <- delays.df[-train.index, selected.var]
+# run naive bayes
+delays.nb <- naiveBayes(Flight.Status ~ ., data = train.df)
+delays.nb
+```
+
+#### Table 8.5
+
+
+# use prop.table() with margin = 1 to convert a count table to a proportion table, 
+# where each row sums up to 1 (use margin = 2 for column sums).
+```{r}
+prop.table(table(train.df$Flight.Status, train.df$DEST), margin = 1)
+```
+
+
+#### Table 8.6
+
+## predict probabilities
+```{r}
+pred.prob <- predict(delays.nb, newdata = valid.df, type = "raw")
+```
+## predict class membership
+```{r}
+pred.class <- predict(delays.nb, newdata = valid.df)
+
+df <- data.frame(actual = valid.df$Flight.Status, predicted = pred.class, pred.prob)
+
+df[valid.df$CARRIER == "DL" & valid.df$DAY_WEEK == 7 & valid.df$CRS_DEP_TIME == 10 & 
+     valid.df$DEST == "LGA" & valid.df$ORIGIN == "DCA",]
+```
+
+
+
+
+#### Table 8.7
+
+
+# training and validation 
+```{r}
+library(caret)
+pred.class <- predict(delays.nb, newdata = train.df)
+confusionMatrix(pred.class, train.df$Flight.Status)
+
+pred.class <- predict(delays.nb, newdata = valid.df)
+confusionMatrix(pred.class, valid.df$Flight.Status)
+```
+
+
+
+#### Figure 8.1
+
+```{r}
+library(gains)
+gain <- gains(ifelse(valid.df$Flight.Status=="delayed",1,0), pred.prob[,1], groups=100)
+
+plot(c(0,gain$cume.pct.of.total*sum(valid.df$Flight.Status=="delayed"))~c(0,gain$cume.obs), 
+     xlab="# cases", ylab="Cumulative", main="", type="l")
+lines(c(0,sum(valid.df$Flight.Status=="delayed"))~c(0, dim(valid.df)[1]), lty=2)
+```
+
+#### Riding Mowers & Universal Bank 
+
+#### Figure 9.7
+
+```{r}
+#library(rpart)
+library(rpart.plot)
+mower.df <- read.csv("~/Desktop/RidingMowers.csv")
+
+# use rpart() to run a classification tree.
+# define rpart.control() in rpart() to determine the depth of the 
+```
+
+```{r}
+class.tree <- rpart(Ownership ~ ., data = mower.df, 
+                    control = rpart.control(maxdepth = 2), method = "class")
+
+```
+## plot tree
+# use prp() to plot the tree. You can control plotting parameters such as color, shape, 
+# and information displayed (which and where).
+```{r}
+prp(class.tree, type = 1, extra = 1, split.font = 1, varlen = -10) 
+```
+
+
+
+#### Figure 9.9
+
+```{r}
+library(rpart)
+library(rpart.plot)
+
+bank.df <- read.csv("~/Desktop/UniversalBank.csv")
+bank.df <- bank.df[ , -c(1, 5)]  # Drop ID and zip code columns.
+```
+# partition
+```{r}
+set.seed(1)  
+train.index <- sample(c(1:dim(bank.df)[1]), dim(bank.df)[1]*0.6)  
+train.df <- bank.df[train.index, ]
+valid.df <- bank.df[-train.index, ]
+```
+
+# classification tree and plot
+```{r}
+default.ct <- rpart(Personal.Loan ~ ., data = train.df, method = "class")
+
+prp(default.ct, type = 1, extra = 1, under = TRUE, split.font = 1, varlen = -10)
+```
+
+
+#### Figure 9.10
+
+```{r}
+deeper.ct <- rpart(Personal.Loan ~ ., data = train.df, method = "class", cp = 0, minsplit = 1)
+# count number of leaves
+length(deeper.ct$frame$var[deeper.ct$frame$var == "<leaf>"])
+# plot tree
+prp(deeper.ct, type = 1, extra = 1, under = TRUE, split.font = 1, varlen = -10, 
+    box.col=ifelse(deeper.ct$frame$var == "<leaf>", 'gray', 'white'))  
+```
+
+
+
+#### Table 9.3
+
+# classify records in the validation data.
+# set argument type = "class" in predict() to generate predicted class membership.
+
+```{r}
+default.ct.point.pred.train <- predict(default.ct,train.df,type = "class")
+# generate confusion matrix for training data
+confusionMatrix(default.ct.point.pred.train, as.factor(train.df$Personal.Loan))
+```
+### repeat the code for the validation set, and the deeper tree
+
+
+
+#### Table 9.4
+
+# argument xval refers to the number of folds to use in rpart's built-in
+# cross-validation procedure
+# argument cp sets the smallest value for the complexity parameter.
+```{r}
+cv.ct <- rpart(Personal.Loan ~ ., data = train.df, method = "class", 
+               cp = 0.00001, minsplit = 5, xval = 5)
+# use printcp() to print the table. 
+printcp(cv.ct)
+```
+
+
+#### Figure 9.12
+
+# prune by lower cp
+```{r}
+pruned.ct <- prune(cv.ct, 
+                   cp = cv.ct$cptable[which.min(cv.ct$cptable[,"xerror"]),"CP"])
+length(pruned.ct$frame$var[pruned.ct$frame$var == "<leaf>"])
+prp(pruned.ct, type = 1, extra = 1, split.font = 1, varlen = -10)  
+```
+
+
+#### Figure 9.13
+
+```{r}
+set.seed(1)
+cv.ct <- rpart(Personal.Loan ~ ., data = train.df, method = "class", cp = 0.00001, minsplit = 1, xval = 5)  # minsplit is the minimum number of observations in a node for a split to be attempted. xval is number K of folds in a K-fold cross-validation.
+printcp(cv.ct)  # Print out the cp table of cross-validation errors. The R-squared for a regression tree is 1 minus rel error. xerror (or relative cross-validation error where "x" stands for "cross") is a scaled version of overall average of the 5 out-of-sample errors across the 5 folds.
+pruned.ct <- prune(cv.ct, cp = 0.0154639)
+prp(pruned.ct, type = 1, extra = 1, under = TRUE, split.font = 1, varlen = -10, 
+    box.col=ifelse(pruned.ct$frame$var == "<leaf>", 'gray', 'white')) 
+```
+
+
+
+####Figure 9.15
+
+```{r}
+library(randomForest)
+## random forest
+rf <- randomForest(as.factor(Personal.Loan) ~ ., data = train.df, ntree = 500, 
+                   mtry = 4, nodesize = 5, importance = TRUE)  
+```
+## variable importance plot
+
+```{r}
+varImpPlot(rf, type = 1)
+rf.pred <- predict(rf, valid.df)
+confusionMatrix(rf.pred, as.factor(valid.df$Personal.Loan))
+```
+
+
+
+#### Table 9.5
+
+```{r}
+library(adabag)
+library(rpart) 
+library(caret)
+
+train.df$Personal.Loan <- as.factor(train.df$Personal.Loan)
+
+set.seed(1)
+boost <- boosting(Personal.Loan ~ ., data = train.df)
+pred <- predict(boost, valid.df)
+confusionMatrix(as.factor(pred$class), as.factor(valid.df$Personal.Loan))
+```
+
+
